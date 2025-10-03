@@ -1,0 +1,88 @@
+name: OpenTofu CI/CD (OCI)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.8.5"
+
+      - name: Write credentials (secrets.auto.tfvars)
+        run: |
+          cat > secrets.auto.tfvars <<'EOF'
+          tenancy_ocid     = "${{ secrets.OCI_TENANCY_OCID }}"
+          user_ocid        = "${{ secrets.OCI_USER_OCID }}"
+          fingerprint      = "${{ secrets.OCI_FINGERPRINT }}"
+          private_key_path = "${{ github.workspace }}/infra/oci_api_key.pem"
+          region           = "${{ secrets.OCI_REGION }}"
+          compartment_ocid = "${{ secrets.OCI_COMPARTMENT_OCID }}"
+          ssh_authorized_key = "${{ secrets.SSH_PUBLIC_KEY }}"
+          grafana_admin_user = "${{ secrets.GRAFANA_ADMIN_USER }}"
+          grafana_admin_password = "${{ secrets.GRAFANA_ADMIN_PASSWORD }}"
+          EOF
+          echo "${{ secrets.OCI_PRIVATE_KEY_PEM }}" > oci_api_key.pem
+          chmod 600 oci_api_key.pem
+
+      - name: Init
+        run: tofu init -input=false
+
+      - name: Validate
+        run: tofu validate
+
+      - name: Plan
+        run: tofu plan -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infra/tfplan
+
+  apply:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [plan]
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.8.5"
+
+      - name: Write credentials (secrets.auto.tfvars)
+        run: |
+          cat > secrets.auto.tfvars <<'EOF'
+          tenancy_ocid     = "${{ secrets.OCI_TENANCY_OCID }}"
+          user_ocid        = "${{ secrets.OCI_USER_OCID }}"
+          fingerprint      = "${{ secrets.OCI_FINGERPRINT }}"
+          private_key_path = "${{ github.workspace }}/infra/oci_api_key.pem"
+          region           = "${{ secrets.OCI_REGION }}"
+          compartment_ocid = "${{ secrets.OCI_COMPARTMENT_OCID }}"
+          ssh_authorized_key = "${{ secrets.SSH_PUBLIC_KEY }}"
+          grafana_admin_user = "${{ secrets.GRAFANA_ADMIN_USER }}"
+          grafana_admin_password = "${{ secrets.GRAFANA_ADMIN_PASSWORD }}"
+          EOF
+          echo "${{ secrets.OCI_PRIVATE_KEY_PEM }}" > oci_api_key.pem
+          chmod 600 oci_api_key.pem
+
+      - name: Init
+        run: tofu init -input=false
+
+      - name: Apply
+        run: tofu apply -auto-approve

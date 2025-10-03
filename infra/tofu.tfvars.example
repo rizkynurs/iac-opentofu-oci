@@ -1,0 +1,12 @@
+tenancy_ocid       = "ocid1.tenancy.oc1..xxxxx"
+user_ocid          = "ocid1.user.oc1..xxxxx"
+fingerprint        = "aa:bb:cc:dd:..."
+private_key_path   = "/home/you/.oci/oci_api_key.pem"
+region             = "ap-singapore-1"
+compartment_ocid   = "ocid1.compartment.oc1..xxxxx"
+
+ssh_authorized_key = "ssh-ed25519 AAAA... your_key"
+
+# Optional
+grafana_admin_user     = "admin"
+grafana_admin_password = "changeMe123!"

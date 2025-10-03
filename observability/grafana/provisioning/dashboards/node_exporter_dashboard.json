@@ -1,0 +1,35 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 1,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "CPU Load (1m)",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "node_load1", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Memory Used (bytes)",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "refId": "A" }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "CPU Time by Mode",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "rate(node_cpu_seconds_total[5m])", "legendFormat": "{{mode}}", "refId": "A" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "title": "Node Exporter Quickview",
+  "version": 1
+}

@@ -1,0 +1,39 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+  subgraph OCI["Oracle Cloud Infrastructure"]
+    VCN["VCN (10.0.0.0/16)"]
+    SUB["Public Subnet (10.0.1.0/24)"]
+    NSG["NSG: Ingress 22, 80"]
+    IGW["Internet Gateway"]
+    RT["Route Table: 0.0.0.0/0 -> IGW"]
+    VM["Compute: VM.Standard.A1.Flex\nUbuntu 24.04 Minimal (ARM)\nPublic IP"]
+  end
+
+  Internet((Internet)) -->|HTTP :80| VM
+  Internet -.->|SSH :22| VM
+  VM --- NSG
+  VM --- SUB
+  SUB --- VCN
+  VCN --- RT
+  VCN --- IGW
+
+  subgraph On VM
+    Nginx["Nginx: serves 'Hello, OpenTofu!'"]
+    Docker["Docker + Compose"]
+    Loki["Loki (3100)"]
+    Promtail["Promtail: /var/log + nginx logs -> Loki"]
+    Prom["Prometheus (9090)"]
+    NodeExp["Node Exporter (9100)"]
+    Graf["Grafana (3000)"]
+  end
+
+  VM --> Nginx
+  VM --> Docker
+  Docker --> Loki
+  Docker --> Prom
+  Docker --> NodeExp
+  Docker --> Graf
+  Promtail --> Loki
+  Prom --> NodeExp
+  Graf --> Loki
+  Graf --> Prom

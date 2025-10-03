@@ -1,0 +1,19 @@
+# OPTIONAL: store OpenTofu state in OCI Object Storage via S3-compatible endpoint.
+# 1. Create 'Customer Secret Key' in OCI (Access Key + Secret Key).
+# 2. Create a bucket. Note your Object Storage 'namespace' and region.
+# 3. Replace the placeholders below and rename this file to 'backend.tf'.
+
+terraform {
+  backend "s3" {
+    bucket                      = "opentofu-state"
+    key                         = "state/oci-webserver/terraform.tfstate"
+    region                      = "ap-southeast-1" # arbitrary; not used by OCI compat endpoint
+    endpoint                    = "https://<namespace>.compat.objectstorage.<region>.oraclecloud.com"
+    access_key                  = "<ACCESS_KEY>"
+    secret_key                  = "<SECRET_KEY>"
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    force_path_style            = true
+  }
+}

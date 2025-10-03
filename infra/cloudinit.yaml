@@ -1,0 +1,268 @@
+#cloud-config
+package_update: true
+packages:
+  - nginx
+  - git
+  - curl
+  - tar
+  - unzip
+
+write_files:
+  - path: /var/www/html/index.html
+    permissions: '0644'
+    content: |
+      <!doctype html>
+      <html><head><title>Hello</title></head>
+      <body style="font-family:sans-serif;">
+      <h1>Hello, OpenTofu!</h1>
+      <p>Your OCI VM (Ubuntu 24.04 Minimal ARM) is up. Served by Nginx.</p>
+      </body></html>
+
+  - path: /etc/sysctl.d/99-net-tuning.conf
+    permissions: '0644'
+    content: |
+      net.core.default_qdisc=fq
+      net.ipv4.tcp_congestion_control=bbr
+      net.ipv4.tcp_fastopen=3
+      net.core.somaxconn=1024
+      net.ipv4.ip_local_port_range=1024 65000
+      vm.swappiness=10
+
+  - path: /opt/observability/.env
+    permissions: '0600'
+    content: |
+      GRAFANA_ADMIN_USER={{ grafana_admin_user }}
+      GRAFANA_ADMIN_PASSWORD={{ grafana_admin_password }}
+
+  - path: /opt/observability/docker-compose.yml
+    permissions: '0644'
+    content: |
+      services:
+        loki:
+          image: grafana/loki:2.9.6
+          command: ["-config.file=/etc/loki/config.yml"]
+          volumes:
+            - ./loki/config.yml:/etc/loki/config.yml:ro
+            - loki-data:/loki
+          ports:
+            - "3100:3100"
+          restart: unless-stopped
+
+        promtail:
+          image: grafana/promtail:2.9.6
+          command: ["-config.file=/etc/promtail/config.yml"]
+          volumes:
+            - ./promtail/config.yml:/etc/promtail/config.yml:ro
+            - /var/log:/var/log:ro
+            - /var/lib/docker/containers:/var/lib/docker/containers:ro
+            - /etc/machine-id:/etc/machine-id:ro
+          depends_on: [loki]
+          restart: unless-stopped
+
+        prometheus:
+          image: prom/prometheus:v2.54.1
+          volumes:
+            - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+            - prom-data:/prometheus
+          ports:
+            - "9090:9090"
+          restart: unless-stopped
+
+        node-exporter:
+          image: quay.io/prometheus/node-exporter:v1.8.2
+          command:
+            - '--path.rootfs=/host'
+          volumes:
+            - '/:/host:ro,rslave'
+          restart: unless-stopped
+
+        grafana:
+          image: grafana/grafana:11.2.2
+          environment:
+            - GF_SECURITY_ADMIN_USER=$${GRAFANA_ADMIN_USER:-admin}
+            - GF_SECURITY_ADMIN_PASSWORD=$${GRAFANA_ADMIN_PASSWORD:-admin123}
+
+          volumes:
+            - grafana-data:/var/lib/grafana
+            - ./grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+            - ./grafana/provisioning/dashboards/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro
+            - ./grafana/provisioning/dashboards/node_exporter_dashboard.json:/var/lib/grafana/dashboards/node_exporter_dashboard.json:ro
+          ports:
+            - "3000:3000"
+          restart: unless-stopped
+
+      volumes:
+        loki-data:
+        grafana-data:
+        prom-data:
+
+
+  - path: /opt/observability/loki/config.yml
+    permissions: '0644'
+    content: |
+      auth_enabled: false
+      server:
+        http_listen_port: 3100
+        log_level: warn
+      common:
+        path_prefix: /loki
+        storage:
+          filesystem:
+            chunks_directory: /loki/chunks
+            rules_directory: /loki/rules
+        replication_factor: 1
+        ring:
+          instance_addr: 127.0.0.1
+          kvstore:
+            store: inmemory
+      schema_config:
+        configs:
+        - from: 2023-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+      ruler:
+        alertmanager_url: http://localhost:9093
+
+
+  - path: /opt/observability/promtail/config.yml
+    permissions: '0644'
+    content: |
+      server:
+        http_listen_port: 9080
+        grpc_listen_port: 0
+
+      positions:
+        filename: /tmp/positions.yaml
+
+      clients:
+        - url: http://loki:3100/loki/api/v1/push
+
+      scrape_configs:
+        - job_name: system-logs
+          static_configs:
+            - targets: [localhost]
+              labels:
+                job: varlogs
+                __path__: /var/log/*.log
+
+        - job_name: nginx-logs
+          static_configs:
+            - targets: [localhost]
+              labels:
+                job: nginx
+                __path__: /var/log/nginx/*.log
+
+        - job_name: docker-logs
+          static_configs:
+            - targets: [localhost]
+              labels:
+                job: docker
+                __path__: /var/lib/docker/containers/*/*-json.log
+
+
+  - path: /opt/observability/prometheus/prometheus.yml
+    permissions: '0644'
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+
+      scrape_configs:
+        - job_name: prometheus
+          static_configs:
+            - targets: ['prometheus:9090']
+
+        - job_name: node-exporter
+          static_configs:
+            - targets: ['node-exporter:9100']
+
+
+  - path: /opt/observability/grafana/provisioning/datasources/datasource.yml
+    permissions: '0644'
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+        - name: Loki
+          type: loki
+          access: proxy
+          url: http://loki:3100
+
+
+  - path: /opt/observability/grafana/provisioning/dashboards/dashboard.yml
+    permissions: '0644'
+    content: |
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards
+
+
+  - path: /opt/observability/grafana/provisioning/dashboards/node_exporter_dashboard.json
+    permissions: '0644'
+    content: |
+      {
+        "annotations": { "list": [] },
+        "editable": true,
+        "fiscalYearStartMonth": 1,
+        "graphTooltip": 0,
+        "panels": [
+          {
+            "type": "stat",
+            "title": "CPU Load (1m)",
+            "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+            "targets": [
+              { "expr": "node_load1", "refId": "A" }
+            ]
+          },
+          {
+            "type": "stat",
+            "title": "Memory Used (bytes)",
+            "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+            "targets": [
+              { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "refId": "A" }
+            ]
+          },
+          {
+            "type": "graph",
+            "title": "CPU Time by Mode",
+            "gridPos": { "h": 8, "w": 16, "x": 0, "y": 4 },
+            "targets": [
+              { "expr": "rate(node_cpu_seconds_total[5m])", "legendFormat": "{{mode}}", "refId": "A" }
+            ]
+          }
+        ],
+        "schemaVersion": 39,
+        "title": "Node Exporter Quickview",
+        "version": 1
+      }
+
+
+runcmd:
+  - systemctl enable --now nginx
+  - |
+    if ! grep -q "gzip on;" /etc/nginx/nginx.conf; then
+      sed -i '/http {/a \\tgzip on;\\n\\tgzip_comp_level 2;\\n\\tgzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;\\n' /etc/nginx/nginx.conf
+      systemctl reload nginx || true
+    fi
+  - sysctl --system
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu
+  - systemctl enable --now docker
+  - sudo iptables -I INPUT 5 -p tcp --dport 80 -j ACCEPT
+  - sudo netfilter-persistent save
+  - chown -R ubuntu:ubuntu /opt/observability
+  - bash -lc 'cd /opt/observability && set -e; export $(grep -v "^#" .env | xargs) && docker compose up -d'

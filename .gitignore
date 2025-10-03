@@ -1,0 +1,8 @@
+secret.auto.tfvars
+secrets.auto.tfvars
+backups/
+*.tgz
+*.zip
+.oci*
+.oci/*
+*.terraform*

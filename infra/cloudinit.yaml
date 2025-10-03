@@ -250,6 +250,34 @@ write_files:
         "version": 1
       }
 
+  - path: /usr/local/bin/nginx_tune.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      NGINX_CONF="/etc/nginx/nginx.conf"
+
+      # --- gzip (your original intent), idempotent ---
+      if ! grep -Eq '^[[:space:]]*gzip[[:space:]]+on;' "$NGINX_CONF"; then
+        sed -i '/http[[:space:]]*{/a\    gzip on;\n    gzip_comp_level 2;\n    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;' "$NGINX_CONF"
+      fi
+
+      # --- keepalive_timeout (replace if exists, else insert) ---
+      if grep -Eq '^[[:space:]]*keepalive_timeout[[:space:]]+' "$NGINX_CONF"; then
+        sed -ri 's|^[[:space:]]*keepalive_timeout[[:space:]].*|    keepalive_timeout 65;|' "$NGINX_CONF"
+      else
+        sed -i '/http[[:space:]]*{/a\    keepalive_timeout 65;' "$NGINX_CONF"
+      fi
+
+      # --- server_tokens off (replace if exists, else insert) ---
+      if grep -Eq '^[[:space:]]*server_tokens[[:space:]]+' "$NGINX_CONF"; then
+        sed -ri 's|^[[:space:]]*server_tokens[[:space:]].*|    server_tokens off;|' "$NGINX_CONF"
+      else
+        sed -i '/http[[:space:]]*{/a\    server_tokens off;' "$NGINX_CONF"
+      fi
+
+      # validate and reload without taking nginx down
+      nginx -t && systemctl reload nginx || true
 
 runcmd:
   - systemctl enable --now nginx
@@ -264,5 +292,6 @@ runcmd:
   - systemctl enable --now docker
   - sudo iptables -I INPUT 5 -p tcp --dport 80 -j ACCEPT
   - sudo netfilter-persistent save
+  # - [ bash, -lc, "/usr/local/bin/nginx_tune.sh" ]
   - chown -R ubuntu:ubuntu /opt/observability
   - bash -lc 'cd /opt/observability && set -e; export $(grep -v "^#" .env | xargs) && docker compose up -d'
